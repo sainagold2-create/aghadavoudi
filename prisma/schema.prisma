@@ -1,0 +1,218 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model StaffUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("orders") // admin | orders | supply
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedSalesOrders CustomOrder[]       @relation("SalesOwner")
+  ownedSupplyOrders CustomOrder[]      @relation("SupplyOwner")
+  statusChanges    OrderStatusHistory[]
+  notes            OrderNote[]
+  followUps        MakerFollowUpTask[]
+}
+
+model CustomerAccount {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    CustomOrder[]
+  cartItems LabCartItem[]
+}
+
+model OtpChallenge {
+  id        String   @id @default(cuid())
+  phone     String
+  codeHash  String
+  purpose   String // submit | track | login
+  orderCode String?
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone, purpose])
+}
+
+model LabProduct {
+  id          String   @id @default(cuid())
+  sku         String   @unique
+  title       String
+  activeStock Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  cartItems LabCartItem[]
+}
+
+model CustomOrder {
+  id                     String    @id @default(cuid())
+  code                   String    @unique
+  status                 String    @default("pending_review")
+  customerName           String
+  customerPhone          String
+  productGroup           String    @default("other")
+  productName            String?
+  material               String?
+  color                  String?
+  dimensions             String?
+  features               String?
+  description            String?
+  shippingAddress          String
+  workshopName             String?
+  makerDueAt               DateTime?
+  customerReadyDueAt       DateTime?
+  receivedFromWorkshopAt   DateTime?
+  supplierName             String?
+  supplierDueAt            DateTime?
+  /** اولین موعد اعلام‌شده به تأمین‌کننده — برای محاسبه تأخیر کل نسبت به وعدهٔ اولیه */
+  supplierDueAtInitial     DateTime?
+  ordersDecisionDueAt      DateTime?
+  ordersReviewedAt         DateTime?
+  supplyReviewedAt         DateTime?
+  supplierConfirmedAt      DateTime?
+  supplierRejectedAt       DateTime?
+  arrivedFromSupplierAt    DateTime?
+  supplierDelayCount       Int       @default(0)
+  /** مجموع روزهای تأخیر انباشته وقتی تاریخ جدید ثبت می‌شود */
+  supplierDelayDaysAccrued Int       @default(0)
+  lastDelayReason          String?
+  readyAt                  DateTime?
+  completedAt              DateTime?
+  stopReason               String?
+  nextAction               String?
+  labProductId             String?
+  cartAddError             String?
+  productionSmsSentAt      DateTime?
+  customerId               String
+  salesOwnerId             String?
+  supplyOwnerId            String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  customer    CustomerAccount      @relation(fields: [customerId], references: [id])
+  salesOwner  StaffUser?           @relation("SalesOwner", fields: [salesOwnerId], references: [id])
+  supplyOwner StaffUser?           @relation("SupplyOwner", fields: [supplyOwnerId], references: [id])
+  files       OrderFile[]
+  sizeLines   OrderSizeLine[]
+  history     OrderStatusHistory[]
+  notes       OrderNote[]
+  followUps   MakerFollowUpTask[]
+  cartItem    LabCartItem?
+  smsMessages SmsMessage[]
+
+  @@index([status])
+  @@index([customerPhone])
+  @@index([productGroup])
+  @@index([supplierDueAt])
+}
+
+model OrderSizeLine {
+  id        String   @id @default(cuid())
+  orderId   String
+  size      String
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  order CustomOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OrderFile {
+  id           String   @id @default(cuid())
+  orderId      String
+  originalName String
+  storedName    String
+  mimeType     String
+  sizeBytes    Int
+  createdAt    DateTime @default(now())
+
+  order CustomOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OrderStatusHistory {
+  id         String   @id @default(cuid())
+  orderId    String
+  fromStatus String?
+  toStatus   String
+  note       String?
+  metaJson   String?
+  actorType  String // customer | staff | system
+  staffId    String?
+  createdAt  DateTime @default(now())
+
+  order CustomOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff StaffUser?  @relation(fields: [staffId], references: [id])
+}
+
+model OrderNote {
+  id        String   @id @default(cuid())
+  orderId   String
+  body      String
+  staffId   String?
+  createdAt DateTime @default(now())
+
+  order CustomOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff StaffUser?  @relation(fields: [staffId], references: [id])
+}
+
+model MakerFollowUpTask {
+  id        String    @id @default(cuid())
+  orderId   String
+  dueAt     DateTime
+  doneAt    DateTime?
+  note      String?
+  staffId   String?
+  createdAt DateTime  @default(now())
+
+  order CustomOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff StaffUser?  @relation(fields: [staffId], references: [id])
+
+  @@index([dueAt])
+}
+
+model LabCartItem {
+  id            String   @id @default(cuid())
+  customerId    String
+  customOrderId String   @unique
+  productSku    String
+  title         String
+  quantity      Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer CustomerAccount @relation(fields: [customerId], references: [id])
+  order    CustomOrder     @relation(fields: [customOrderId], references: [id])
+  product  LabProduct      @relation(fields: [productSku], references: [sku])
+}
+
+model SmsMessage {
+  id             String   @id @default(cuid())
+  orderId        String?
+  phone          String
+  templateKey    String
+  body           String
+  idempotencyKey String   @unique
+  status         String   @default("queued") // queued | sent | failed
+  attempts       Int      @default(0)
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  sentAt         DateTime?
+
+  order CustomOrder? @relation(fields: [orderId], references: [id])
+
+  @@index([status])
+}
